@@ -6,7 +6,7 @@ from django.test import TestCase, RequestFactory
 from django.conf import settings
 
 from .cidr_utils import parse_cidr, is_ip_in_cidr, is_host_allowed
-from .cidr_middleware import CIDRHostValidationMiddleware
+from .wsgi import CustomWSGIRequest
 
 
 class CIDRUtilsTestCase(unittest.TestCase):
@@ -108,65 +108,88 @@ class CIDRUtilsTestCase(unittest.TestCase):
         self.assertFalse(is_host_allowed('[2001:db9::1]', allowed))
 
 
-class CIDRMiddlewareTestCase(TestCase):
-    """Test CIDR middleware integration."""
+class CustomWSGIRequestTestCase(TestCase):
+    """Test CIDR support in CustomWSGIRequest."""
     
-    def setUp(self):
-        self.factory = RequestFactory()
-        self.get_response = Mock(return_value='response')
-        self.middleware = CIDRHostValidationMiddleware(self.get_response)
+    def _make_environ(self, host):
+        """Helper to create WSGI environ with a specific host."""
+        return {
+            'REQUEST_METHOD': 'GET',
+            'PATH_INFO': '/',
+            'HTTP_HOST': host,
+            'wsgi.input': Mock(),
+            'wsgi.url_scheme': 'http',
+        }
     
-    def _make_request(self, host):
-        """Helper to create a request with a specific host."""
-        request = self.factory.get('/', HTTP_HOST=host)
-        return request
-    
-    @patch('bugsink.cidr_middleware.settings')
+    @patch('bugsink.wsgi.settings')
     def test_allowed_host_passes(self, mock_settings):
         """Test that allowed hosts pass through."""
         mock_settings.ALLOWED_HOSTS = ['example.com', '10.0.0.0/8']
+        mock_settings.DEBUG = False
         
         # Domain name
-        request = self._make_request('example.com')
-        response = self.middleware(request)
-        self.assertEqual(response, 'response')
+        environ = self._make_environ('example.com')
+        request = CustomWSGIRequest(environ)
+        self.assertEqual(request.get_host(), 'example.com')
         
         # IP in CIDR range
-        request = self._make_request('10.0.0.1')
-        response = self.middleware(request)
-        self.assertEqual(response, 'response')
+        environ = self._make_environ('10.0.0.1')
+        request = CustomWSGIRequest(environ)
+        self.assertEqual(request.get_host(), '10.0.0.1')
     
-    @patch('bugsink.cidr_middleware.settings')
+    @patch('bugsink.wsgi.settings')
     def test_disallowed_host_raises(self, mock_settings):
         """Test that disallowed hosts raise DisallowedHost."""
         mock_settings.ALLOWED_HOSTS = ['example.com', '10.0.0.0/8']
+        mock_settings.DEBUG = False
         
         # Different domain
-        request = self._make_request('evil.com')
+        environ = self._make_environ('evil.com')
+        request = CustomWSGIRequest(environ)
         with self.assertRaises(DisallowedHost):
-            self.middleware(request)
+            request.get_host()
         
         # IP outside CIDR range
-        request = self._make_request('192.168.1.1')
+        environ = self._make_environ('192.168.1.1')
+        request = CustomWSGIRequest(environ)
         with self.assertRaises(DisallowedHost):
-            self.middleware(request)
+            request.get_host()
     
-    @patch('bugsink.cidr_middleware.settings')
+    @patch('bugsink.wsgi.settings')
     def test_host_with_port(self, mock_settings):
         """Test host validation with port numbers."""
         mock_settings.ALLOWED_HOSTS = ['example.com', '10.0.0.0/8']
+        mock_settings.DEBUG = False
         
         # Domain with port
-        request = self._make_request('example.com:8000')
-        response = self.middleware(request)
-        self.assertEqual(response, 'response')
+        environ = self._make_environ('example.com:8000')
+        request = CustomWSGIRequest(environ)
+        self.assertEqual(request.get_host(), 'example.com:8000')
         
         # IP with port in CIDR range
-        request = self._make_request('10.0.0.1:8000')
-        response = self.middleware(request)
-        self.assertEqual(response, 'response')
+        environ = self._make_environ('10.0.0.1:8000')
+        request = CustomWSGIRequest(environ)
+        self.assertEqual(request.get_host(), '10.0.0.1:8000')
         
         # Disallowed host with port
-        request = self._make_request('evil.com:8000')
+        environ = self._make_environ('evil.com:8000')
+        request = CustomWSGIRequest(environ)
         with self.assertRaises(DisallowedHost):
-            self.middleware(request)
+            request.get_host()
+    
+    @patch('bugsink.wsgi.settings')
+    def test_cidr_ipv6(self, mock_settings):
+        """Test IPv6 CIDR ranges."""
+        mock_settings.ALLOWED_HOSTS = ['[2001:db8::/32]']
+        mock_settings.DEBUG = False
+        
+        # IPv6 in range
+        environ = self._make_environ('[2001:db8::1]')
+        request = CustomWSGIRequest(environ)
+        self.assertEqual(request.get_host(), '[2001:db8::1]')
+        
+        # IPv6 outside range
+        environ = self._make_environ('[2001:db9::1]')
+        request = CustomWSGIRequest(environ)
+        with self.assertRaises(DisallowedHost):
+            request.get_host()

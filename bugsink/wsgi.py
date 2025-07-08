@@ -13,6 +13,9 @@ import django
 
 from django.core.handlers.wsgi import WSGIHandler, WSGIRequest
 from django.core.exceptions import DisallowedHost
+from django.utils.http import split_domain_port
+
+from .cidr_utils import is_host_allowed
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bugsink_conf')
 
@@ -44,32 +47,47 @@ class CustomWSGIRequest(WSGIRequest):
 
     def get_host(self):
         """
-        We override this method to provide a more informative error message when the host is disallowed, i.e. we include
-        the current value of ALLOWED_HOSTS in the error message. That this is useful for debugging is self-evident.
-        We're leaking a bit of information here, but I don't think it's too much TBH -- especially in the light of ssl
-        certificates being specifically tied to the domain name.
+        We override this method to:
+        1. Support CIDR notation in ALLOWED_HOSTS
+        2. Provide a more informative error message when the host is disallowed
+        
+        This method replaces Django's default host validation with our CIDR-aware validation.
         """
 
         # Import pushed down to make it absolutely clear we avoid circular importing/loading the wrong thing:
         from django.conf import settings
-
-        try:
-            return super().get_host()
-        except DisallowedHost as e:
-            message = str(e)
-
-            if "ALLOWED_HOSTS" in message:
-                # The following 3 lines are copied from HttpRequest.get_host() in Django 4.2
-                allowed_hosts = settings.ALLOWED_HOSTS
-                if settings.DEBUG and not allowed_hosts:
-                    allowed_hosts = [".localhost", "127.0.0.1", "[::1]"]
-
-                message = message[:-1 * len(".")]
-                message += ", which is currently set to %s." % repr(allowed_hosts)
-
-            # from None, because our DisallowedHost is so directly caused by super()'s DisallowedHost that cause and
-            # effect are the same, i.e. cause must be hidden from the stacktrace for the sake of clarity.
-            raise DisallowedHost(message) from None
+        
+        # Get the raw host value using Django's logic but without validation
+        # This code is adapted from django.http.request.HttpRequest.get_host()
+        host = self.META.get('HTTP_X_FORWARDED_HOST')
+        if not host:
+            host = self.META.get('HTTP_HOST')
+        if not host:
+            # Reconstruct the host using the server variables
+            server_name = self.META.get('SERVER_NAME')
+            server_port = str(self.META.get('SERVER_PORT', '80'))
+            if server_port != ('443' if self.is_secure() else '80'):
+                host = '%s:%s' % (server_name, server_port)
+            else:
+                host = server_name
+        
+        # Extract domain without port for validation
+        domain, port = split_domain_port(host)
+        
+        # Get allowed hosts
+        allowed_hosts = settings.ALLOWED_HOSTS
+        if settings.DEBUG and not allowed_hosts:
+            allowed_hosts = [".localhost", "127.0.0.1", "[::1]"]
+        
+        # Validate using our CIDR-aware function
+        if not is_host_allowed(domain, allowed_hosts):
+            msg = "Invalid HTTP_HOST header: %r." % host
+            if domain:
+                msg += " You may need to add %r to ALLOWED_HOSTS." % domain
+            msg += " Current ALLOWED_HOSTS: %s" % repr(allowed_hosts)
+            raise DisallowedHost(msg)
+        
+        return host
 
 
 class CustomWSGIHandler(WSGIHandler):
