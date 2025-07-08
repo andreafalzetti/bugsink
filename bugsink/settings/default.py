@@ -97,6 +97,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'bugsink.cidr_middleware.CIDRHostValidationMiddleware',
     'django.middleware.common.CommonMiddleware',
     'verbose_csrf_middleware.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

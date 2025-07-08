@@ -167,6 +167,8 @@ BUGSINK = {
 
 
 if os.getenv("ALLOWED_HOSTS"):
+    # ALLOWED_HOSTS now supports CIDR notation for IP ranges
+    # Example: ALLOWED_HOSTS=example.com,10.0.0.0/8,172.31.0.0/16,[2001:db8::/32]
     ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
 else:
     ALLOWED_HOSTS = deduce_allowed_hosts(BUGSINK["BASE_URL"])

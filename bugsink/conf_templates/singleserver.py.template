@@ -121,3 +121,11 @@ ALLOWED_HOSTS = deduce_allowed_hosts(BUGSINK["BASE_URL"])
 
 # Alternatively, you can set the ALLOWED_HOSTS manually:
 # ALLOWED_HOSTS = ["{{ host }}"]
+#
+# With CIDR notation support, you can now also specify IP ranges:
+# ALLOWED_HOSTS = [
+#     "{{ host }}",
+#     "10.0.0.0/8",      # Private network (e.g., AWS VPC)
+#     "172.31.0.0/16",   # Docker network
+#     "[2001:db8::/32]", # IPv6 range
+# ]
