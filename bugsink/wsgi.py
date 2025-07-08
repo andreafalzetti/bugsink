@@ -22,10 +22,11 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bugsink_conf')
 
 class CustomWSGIRequest(WSGIRequest):
     """
-    Custom WSQIRequest subclass with 2 fixes:
+    Custom WSQIRequest subclass with 3 fixes:
 
     * Chunked Transfer Encoding (Django's behavior is broken)
     * Better error message for disallowed hosts
+    * CIDR notation support in ALLOWED_HOSTS
 
     Note: used in all servers (in gunicorn through wsgi.py; in Django's runserver through WSGI_APPLICATION)
     """
@@ -52,6 +53,9 @@ class CustomWSGIRequest(WSGIRequest):
         2. Provide a more informative error message when the host is disallowed
         
         This method replaces Django's default host validation with our CIDR-aware validation.
+        We're leaking a bit of information here by including ALLOWED_HOSTS in error messages, 
+        but I don't think it's too much TBH -- especially in the light of ssl certificates 
+        being specifically tied to the domain name.
         """
 
         # Import pushed down to make it absolutely clear we avoid circular importing/loading the wrong thing:
