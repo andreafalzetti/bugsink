@@ -97,9 +97,13 @@ def is_host_allowed(host: str, allowed_hosts: List[str]) -> bool:
         # Not an IP address, it's a domain name
         # Check for subdomain wildcards (e.g., '.example.com')
         for allowed in allowed_hosts:
-            if allowed.startswith('.') and (
-                host.endswith(allowed) or host == allowed[1:]
-            ):
-                return True
+            if allowed.startswith('.'):
+                # Parent domain case: 'example.com' matches '.example.com'
+                if host == allowed[1:]:
+                    return True
+                # Subdomain case: 'sub.example.com' matches '.example.com'
+                # But ensure there's actual subdomain content (len check prevents '.com' matching 'com')
+                elif host.endswith(allowed) and len(host) > len(allowed):
+                    return True
     
     return False

@@ -78,6 +78,12 @@ class CIDRUtilsTestCase(unittest.TestCase):
         self.assertTrue(is_host_allowed('example.com', allowed))
         self.assertTrue(is_host_allowed('EXAMPLE.COM', allowed))  # Case insensitive
         self.assertFalse(is_host_allowed('other.com', allowed))
+        
+        # Test IP addresses as direct matches
+        allowed_ips = ['192.168.1.1', '[::1]']
+        self.assertTrue(is_host_allowed('192.168.1.1', allowed_ips))
+        self.assertTrue(is_host_allowed('[::1]', allowed_ips))
+        self.assertFalse(is_host_allowed('192.168.1.2', allowed_ips))
     
     def test_is_host_allowed_subdomain_wildcard(self):
         """Test subdomain wildcard matching."""
@@ -87,6 +93,11 @@ class CIDRUtilsTestCase(unittest.TestCase):
         self.assertTrue(is_host_allowed('deep.sub.example.com', allowed))
         self.assertTrue(is_host_allowed('example.com', allowed))
         self.assertFalse(is_host_allowed('notexample.com', allowed))
+        
+        # Edge case: ensure '.com' doesn't match just 'com'
+        allowed_tld = ['.com']
+        self.assertFalse(is_host_allowed('com', allowed_tld))
+        self.assertTrue(is_host_allowed('example.com', allowed_tld))
     
     def test_is_host_allowed_cidr(self):
         """Test CIDR range matching."""
